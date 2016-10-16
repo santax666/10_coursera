@@ -7,27 +7,29 @@ from openpyxl import Workbook
 from bs4 import BeautifulSoup
 
 
-def send_get_request(url):
-    site_data = requests.get(url, allow_redirects=False)
+def send_get_request(url, payload=None):
+    site_data = requests.get(url, params=payload, allow_redirects=False)
     return site_data
 
 
 def get_all_courses():
     courses_list = []
-    url = ''.join(('https://api.coursera.org/api/courses.v1?fields=',
-                  'primaryLanguages,subtitleLanguages,startDate,workload'))
-    resp_json = send_get_request(url).json()
+    url = 'https://api.coursera.org/api/courses.v1'
+    fields_val = 'primaryLanguages,subtitleLanguages,startDate,workload'
+    payload = {'fields': fields_val}
+    resp_json = send_get_request(url, payload).json()
     courses_list = resp_json['elements'].copy()
     next_page = resp_json.get('paging', {}).get('next')
     while next_page is not None:
-        resp_json = send_get_request(url+'&start={0}'.format(next_page)).json()
+        payload = {'fields': fields_val, 'start': next_page}
+        resp_json = send_get_request(url, payload).json()
         courses_list.extend(resp_json['elements'].copy())
         next_page = resp_json.get('paging', {}).get('next')
     return courses_list
 
 
-def get_list_random_numbers(max_number, quantity_courses=20):
-    return random.sample(range(max_number), quantity_courses)
+def get_random_courses(courses, quantity_courses=20):
+    return random.sample(courses, quantity_courses)
 
 
 def convert_list_to_str(data):
@@ -51,21 +53,19 @@ def convert_posix_to_datetime(value):
     return datetime.datetime.fromtimestamp(value).strftime('%d-%m-%Y')
 
 
-def get_random_courses_info(data):
+def get_courses_info(courses):
     courses_list = []
-    courses_count = len(data)
-    list_numbers = get_list_random_numbers(courses_count)
-    for number in list_numbers:
-        name = data[number].get('name')
-        primary_languages = data[number].get('primaryLanguages')
+    for course in get_random_courses(courses):
+        name = course.get('name')
+        primary_languages = course.get('primaryLanguages')
         primary_languages = convert_list_to_str(primary_languages)
-        subtitle_languages = data[number].get('subtitleLanguages')
+        subtitle_languages = course.get('subtitleLanguages')
         subtitle_languages = convert_list_to_str(subtitle_languages)
-        start_date = data[number].get('startDate')
+        start_date = course.get('startDate')
         if start_date is not None:
             start_date = convert_posix_to_datetime(start_date)
-        work_load = data[number].get('workload')
-        url = get_url_course(data[number].get('slug'))
+        work_load = course.get('workload')
+        url = get_url_course(course.get('slug'))
         if url is not None:
             rating = get_rating_course(url)
         else:
@@ -76,26 +76,12 @@ def get_random_courses_info(data):
     return courses_list
 
 
-def find_prefix(soup):
-    class_param = 'rc-PhoenixCdpApplication'
-    rid = soup.find('div', {'class': class_param})
-    if rid is not None:
-        return rid['data-reactid']
-
-
-def find_rating_course(soup, prefix):
-    param = prefix + '.0.0.1.1.0.0.0:$section_overview.1.6.0.0.6.1.0.2.0'
-    rating = soup.find('span', {'data-reactid': param})
-    if rating is not None:
-        return rating.string
-
-
 def get_rating_course(url):
     responce = send_get_request(url).content
     course_soup = BeautifulSoup(responce, "html.parser")
-    reactid = find_prefix(course_soup)
-    rating = find_rating_course(course_soup, reactid)
-    return rating
+    rating = course_soup.find('div', {'class': 'ratings-text bt3-visible-xs'})
+    if rating is not None:
+        return rating.string
 
 
 def output_courses_info_to_xlsx(courses_list, filepath):
@@ -126,5 +112,5 @@ if __name__ == '__main__':
     xlsx_file = namespace.filepath
 
     courses_list = get_all_courses()
-    courses_info = get_random_courses_info(courses_list)
-    output_courses_info_to_xlsx(courses_info, xlsx_file)
+    info_data = get_courses_info(courses_list)
+    output_courses_info_to_xlsx(info_data, xlsx_file)
